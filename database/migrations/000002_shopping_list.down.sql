@@ -1,0 +1,1 @@
+DROP TABLE Shopping_List;

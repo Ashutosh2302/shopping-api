@@ -1,0 +1,10 @@
+CREATE TABLE Shopping_List (
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
+    userId UUID NOT NULL,
+    name VARCHAR(50) NOT NULL,
+    createdAt TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updatedAt TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(userId, name),
+	PRIMARY KEY (id),
+    FOREIGN KEY (userId) REFERENCES Platform_User(id) ON DELETE CASCADE
+);

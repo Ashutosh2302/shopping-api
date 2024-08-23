@@ -1,0 +1,8 @@
+CREATE TABLE Platform_User (
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
+    email VARCHAR(200) NOT NULL UNIQUE,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(100) NOT NULL UNIQUE,
+	PRIMARY KEY (id),
+    createdAt TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

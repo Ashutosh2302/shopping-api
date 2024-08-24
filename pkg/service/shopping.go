@@ -19,6 +19,15 @@ func NewShoppingService(db *sql.DB) *ShoppingService {
 	return &ShoppingService{db}
 }
 
+func (s *ShoppingService) updateListUpdatedAt(listId string, tx *sql.Tx) error {
+	_, err := tx.Exec("UPDATE shopping_list set updatedAt = now() WHERE id = $1", listId)
+	if err != nil {
+		fmt.Print("Failed to update list", err)
+		return err
+	}
+	return nil
+}
+
 func (s *ShoppingService) CreateShoppingList(ctx *gin.Context, userId string, l dto.CreateShoppingListRequest) (*types.ShoppingListWithoutItems, error) {
 
 	query := `
@@ -51,7 +60,12 @@ func (s *ShoppingService) CreateShoppingList(ctx *gin.Context, userId string, l 
 }
 
 func (s *ShoppingService) CreateShoppingListItem(ctx *gin.Context, listId string, i dto.CreateShoppingListItemRequest) (*types.ShoppingListItem, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
 
+	defer tx.Rollback()
 	query := `
 	INSERT INTO shopping_list_item(shoppingListId, name, price)
 	VALUES($1, $2, $3)
@@ -61,11 +75,20 @@ func (s *ShoppingService) CreateShoppingListItem(ctx *gin.Context, listId string
 
 	var item types.ShoppingListItem
 
-	err := s.db.QueryRow(query, listId, i.Name, i.Price).Scan(&item.Id, &item.Name, &item.Picked, &item.Price, &createdAt)
+	err = tx.QueryRow(query, listId, i.Name, i.Price).Scan(&item.Id, &item.Name, &item.Picked, &item.Price, &createdAt)
 
 	if err != nil {
 		fmt.Print("Error creating shopping list item", err)
 		return nil, errors.New("failed to create shopping list item")
+	}
+
+	err = s.updateListUpdatedAt(listId, tx)
+	if err != nil {
+		return nil, errors.New("failed to update list")
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, err
 	}
 
 	time, err := utils.GetEpochTime(createdAt)
@@ -78,6 +101,11 @@ func (s *ShoppingService) CreateShoppingListItem(ctx *gin.Context, listId string
 }
 
 func (s *ShoppingService) PickupListItem(ctx *gin.Context, itemId string, listId string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
 	query := `
 	UPDATE shopping_list_item
 	SET 
@@ -86,27 +114,49 @@ func (s *ShoppingService) PickupListItem(ctx *gin.Context, itemId string, listId
 		id = $1 AND shoppingListId = $2
 
 	`
-	_, err := s.db.Exec(query, itemId, listId)
+	_, err = tx.Exec(query, itemId, listId)
 
 	if err != nil {
 		fmt.Print("Error creating shopping list item", err)
 		return errors.New("failed to create shopping list item")
 	}
 
+	err = s.updateListUpdatedAt(listId, tx)
+	if err != nil {
+		return errors.New("failed to update list")
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (s *ShoppingService) DeleteListItem(ctx *gin.Context, itemId string, listId string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+
 	query := `
 	DELETE FROM shopping_list_item
 	WHERE id = $1 and shoppingListId = $2
 	`
 
-	_, err := s.db.Exec(query, itemId, listId)
+	_, err = tx.Exec(query, itemId, listId)
 
 	if err != nil {
 		fmt.Print("Error deleting shopping list item", err)
 		return errors.New("failed to delete shopping list item")
+	}
+
+	err = s.updateListUpdatedAt(listId, tx)
+	if err != nil {
+		return errors.New("failed to update list")
+	}
+	if err = tx.Commit(); err != nil {
+		return err
 	}
 
 	return nil
@@ -120,7 +170,9 @@ func (s *ShoppingService) GetShoppingLists(ctx *gin.Context, loggedInuserId stri
 		WHERE userId = $1
 	)
 	SELECT *, (SELECT COUNT(*) FROM lists) AS total_count
-	FROM lists;
+	FROM lists
+	ORDER BY
+	lists.updatedAt DESC
 	`
 	rows, err := s.db.Query(query, loggedInuserId)
 
